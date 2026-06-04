@@ -103,3 +103,52 @@ class DocumentParser:
             "method": "failed",
             "is_difficult": True
         }
+
+    def parse_document_by_pages(self, file_path: str) -> list:
+        """
+        Divide el PDF en páginas y extrae el texto de cada una de forma independiente.
+        Retorna una lista de dicts: [{"text": str, "page": int, "is_difficult": bool}]
+        """
+        pages_data = []
+        file_path_obj = Path(file_path)
+        if not file_path_obj.exists():
+            return []
+
+        # Usamos pdfplumber para procesar página por página
+        if PDFPLUMBER_AVAILABLE and file_path.lower().endswith('.pdf'):
+            try:
+                with pdfplumber.open(file_path) as pdf:
+                    for idx, page in enumerate(pdf.pages):
+                        text = page.extract_text()
+                        if text and len(text.strip()) > 50:
+                            pages_data.append({
+                                "text": text,
+                                "page": idx + 1,
+                                "is_difficult": False
+                            })
+                        elif OCR_AVAILABLE:
+                            try:
+                                images = convert_from_path(file_path, first_page=idx+1, last_page=idx+1)
+                                if images:
+                                    ocr_text = pytesseract.image_to_string(images[0])
+                                    pages_data.append({
+                                        "text": ocr_text,
+                                        "page": idx + 1,
+                                        "is_difficult": True
+                                    })
+                            except Exception as e:
+                                logger.warning(f"OCR falló para pág {idx+1}: {e}")
+            except Exception as e:
+                logger.warning(f"pdfplumber falló en páginas para {file_path}: {e}")
+
+        # Si por alguna razón la lista de páginas está vacía, intentamos el parser normal
+        if not pages_data:
+            res = self.parse_document(file_path)
+            if res["text"]:
+                pages_data.append({
+                    "text": res["text"],
+                    "page": 1,
+                    "is_difficult": res["is_difficult"]
+                })
+
+        return pages_data
