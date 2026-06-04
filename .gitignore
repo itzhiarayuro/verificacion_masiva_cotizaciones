@@ -1,0 +1,19 @@
+# Entornos virtuales
+venv/
+env/
+.env
+__pycache__/
+*.pyc
+
+# IDEs
+.vscode/
+.idea/
+
+# Directorios de salida
+outputs/
+temp/
+*.xlsx
+*.csv
+
+# UI / Streamlit
+.streamlit/
