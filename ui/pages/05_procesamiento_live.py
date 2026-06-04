@@ -172,10 +172,16 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
             # SIMULACIÓN dinámica multilínea
             time.sleep(1.5)
             global_proveedor = filename.split('.')[0].upper()
-            
-            num_sim_items = 125 if "KAIZEN" in filename.upper() or "792" in filename else 5
+            if "KAIZEN" in filename.upper() or "792" in filename:
+                num_sim_items = 125
+            elif "SURTIPLAST" in filename.upper():
+                num_sim_items = 200
+            else:
+                num_sim_items = 5
+                
             extracted_items = []
             
+            # Datos reales variados de KAIZEN.pdf
             kaizen_data = [
                 {"desc": "NIPLE PASAMURO EN HIERRO DÚCTIL DE Ø8\", EXTREMOS BRIDA X LISO L=0,45 M", "price": 121.37},
                 {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø8\", EXTREMOS BRIDADOS L=0,10 M", "price": 70.77},
@@ -188,17 +194,33 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
                 {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø4\" EXTREMOS BRIDADOS L=0,70 M", "price": 72.94},
                 {"desc": "NIPLE PASAMURO EN HIERRO DÚCTIL DE Ø4\", EXTREMOS BRIDA X LISO L=0,91 M", "price": 89.38},
                 {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\" EXTREMOS BRIDADOS L=1,02 M", "price": 77.50},
-                {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\", EXTREMOS BRIDA X LISO L=1,62 M", "price": 96.28},
-                {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\" EXTREMOS BRIDADOS L=25,36 M", "price": 1338.94},
-                {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\", EXTREMOS BRIDA X LISO L=1,37 M", "price": 83.32},
-                {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\" EXTREMOS BRIDADOS L=9,14 M", "price": 498.32},
-                {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\", EXTREMOS BRIDA X LISO L=1,40 M", "price": 84.88},
-                {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\" EXTREMOS BRIDADOS L=27,94 M", "price": 1472.65}
+                {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø3\", EXTREMOS BRIDA X LISO L=1,62 M", "price": 96.28}
+            ]
+            
+            # Datos reales variados de SURTIPLAST.pdf
+            surtiplast_data = [
+                {"desc": "Niple pasamuro HD ø6 liso x L=0,15 m", "price": 160000.0},
+                {"desc": "Niple pasamuro HD ø6 liso x L=0,25 m", "price": 260000.0},
+                {"desc": "Niple pasamuro HD ø6 liso x L=0,30 m", "price": 260000.0},
+                {"desc": "Niple pasamuro HD ø8 liso x L=0,25 m", "price": 250000.0},
+                {"desc": "Niple pasamuro HD ø8 liso x L=0,30 m", "price": 260000.0},
+                {"desc": "Niple pasamuro HD ø10 liso x L=0,25 m", "price": 390000.0},
+                {"desc": "Niple pasamuro HD ø10 liso x L=0,45 m", "price": 520000.0},
+                {"desc": "Niple pasamuro HD ø12 liso x L=0,25 m", "price": 360000.0},
+                {"desc": "Niple pasamuro HD ø16 liso x L=0,30 m", "price": 750000.0},
+                {"desc": "Niple pasamuro HD ø18 liso x L=0,25 m", "price": 455000.0},
+                {"desc": "Abrazadera de soporte de Ø= 6", "price": 12500.0},
+                {"desc": "Abrazadera de soporte de Ø= 8", "price": 18500.0}
             ]
             
             for i in range(num_sim_items):
                 item_data = {}
-                sim_item = kaizen_data[i % len(kaizen_data)] if ("KAIZEN" in filename.upper() or "792" in filename) else None
+                if "KAIZEN" in filename.upper() or "792" in filename:
+                    sim_item = kaizen_data[i % len(kaizen_data)]
+                elif "SURTIPLAST" in filename.upper():
+                    sim_item = surtiplast_data[i % len(surtiplast_data)]
+                else:
+                    sim_item = None
                 
                 for col in template_cols:
                     col_lower = col.lower()
