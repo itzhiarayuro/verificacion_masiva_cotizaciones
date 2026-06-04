@@ -26,7 +26,10 @@ class LLMOrchestrator:
 
         if self.gemini_api_key and GEMINI_AVAILABLE:
             genai.configure(api_key=self.gemini_api_key)
-            self.gemini_model = genai.GenerativeModel('gemini-2.0-flash-exp')
+            self.gemini_model = genai.GenerativeModel(
+                'gemini-2.0-flash',
+                generation_config={"temperature": 0.0, "max_output_tokens": 8192}
+            )
         else:
             self.gemini_model = None
 
@@ -102,9 +105,9 @@ class LLMOrchestrator:
             completion = self.nvidia_client.chat.completions.create(
                 model="meta/llama-3.1-70b-instruct",
                 messages=[{"role": "user", "content": full_prompt}],
-                temperature=0.2,
+                temperature=0.1,
                 top_p=0.7,
-                max_tokens=1024,
+                max_tokens=4096,
             )
             response_text = completion.choices[0].message.content.replace("```json", "").replace("```", "").strip()
             data = json.loads(response_text)
