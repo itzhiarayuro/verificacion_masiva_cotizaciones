@@ -16,9 +16,12 @@ st.title("⏳ 5. Procesamiento y Live Preview")
 
 data_source = st.session_state.get("data_source", "local")
 
-# Inicializar st.session_state.uploaded_pdfs si no existe
+# Inicializar st.session_state.uploaded_pdfs y extraction_results
 if "uploaded_pdfs" not in st.session_state:
     st.session_state.uploaded_pdfs = []
+
+if "extraction_results" not in st.session_state:
+    st.session_state.extraction_results = None
 
 uploaded_files = []
 
@@ -37,14 +40,19 @@ elif data_source == "gmail":
 
 # Guardar los archivos locales en session_state
 if data_source == "local" and uploaded_files:
-    st.session_state.uploaded_pdfs = []
-    for f in uploaded_files:
-        file_bytes = f.read()
-        f.seek(0)
-        st.session_state.uploaded_pdfs.append({
-            "name": f.name,
-            "bytes": file_bytes
-        })
+    # Solo resetear si los archivos cargados cambian
+    current_names = [f.name for f in uploaded_files]
+    saved_names = [pdf["name"] for pdf in st.session_state.uploaded_pdfs]
+    if current_names != saved_names:
+        st.session_state.uploaded_pdfs = []
+        st.session_state.extraction_results = None # Limpiar resultados anteriores
+        for f in uploaded_files:
+            file_bytes = f.read()
+            f.seek(0)
+            st.session_state.uploaded_pdfs.append({
+                "name": f.name,
+                "bytes": file_bytes
+            })
 
 # Mostrar cuántos archivos hay listos para procesar
 if st.session_state.uploaded_pdfs:
@@ -52,13 +60,14 @@ if st.session_state.uploaded_pdfs:
 else:
     st.warning("⚠️ Por favor sube al menos un PDF antes de continuar.")
 
+# Botón de Procesamiento
 if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pdfs:
     st.markdown("### Procesando documentos...")
     
     progress_bar = st.progress(0)
     status_text = st.empty()
     
-    # Obtener las columnas del template seleccionado o creado en el paso 3
+    # Obtener las columnas del template
     if "custom_template_df" in st.session_state:
         template_cols = list(st.session_state.custom_template_df.columns)
     else:
@@ -69,7 +78,7 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
     
     grid_placeholder = st.empty()
     
-    # Inicializar servicios de extracción reales si hay API keys
+    # Inicializar servicios
     api_ready = st.session_state.get("api_keys_configured", False) and os.getenv("GEMINI_API_KEY")
     parser = DocumentParser()
     orchestrator = LLMOrchestrator() if api_ready else None
@@ -82,16 +91,13 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
         
         status_text.text(f"Abriendo {filename} ({idx + 1}/{total_files})...")
         
-        # Guardar la posición para remover el placeholder
         placeholder_idx = len(results_list)
-        
-        # Insertar fila inicial tipo "Procesando"
         placeholder_row = {col: "" for col in all_cols}
         placeholder_row["Archivo"] = filename
         placeholder_row["Estado"] = "⏳ Procesando..."
         results_list.append(placeholder_row)
         
-        # Renderizar en vivo
+        # Renderizar temporal en vivo
         live_df = pd.DataFrame(results_list)
         with grid_placeholder.container():
             render_live_preview(live_df, key=f"grid_{idx}_init")
@@ -102,14 +108,11 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
         
         if api_ready:
             try:
-                # Escribir archivo temporalmente a disco para el parser
                 with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_file:
                     tmp_file.write(pdf_bytes)
                     tmp_path = tmp_file.name
                 
-                # Parsear el documento página por página
                 pages = parser.parse_document_by_pages(tmp_path)
-                
                 confidences = []
                 sources = []
                 item_fields = [col for col in template_cols if col.lower() != "proveedor"]
@@ -121,7 +124,6 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
                     
                     status_text.text(f"Analizando {filename} - Procesando Página {page_num}/{len(pages)}...")
                     
-                    # Instrucción detallada pidiendo lista completa de productos de esta página específica
                     prompt_instrucciones = f"""
                     Identifica el nombre comercial del Proveedor de la cotización y extrae la lista completa de TODOS los productos, materiales, o servicios cotizados en esta página {page_num} del documento.
                     Es muy importante que extraigas todas las filas de la tabla de cotización sin omitir ninguna.
@@ -136,11 +138,9 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
                     }}
                     """
                     
-                    # Extraer usando Gemini/NVIDIA
                     extraction = orchestrator.process_document(text, is_difficult, prompt_instrucciones)
                     
                     extracted_json = extraction.get("data", {})
-                    # Si encuentra proveedor válido
                     prov_candidate = extracted_json.get("proveedor", "Desconocido")
                     if prov_candidate and prov_candidate != "Desconocido":
                         global_proveedor = prov_candidate
@@ -154,7 +154,6 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
                 
                 os.unlink(tmp_path)
                 
-                # Consolidar Confianza
                 if "LOW" in confidences:
                     confidence = "LOW"
                 elif "MEDIUM" in confidences:
@@ -170,15 +169,13 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
                 extracted_items = [{"error": str(e)}]
                 conf_label = "🔴 FALLÓ"
         else:
-            # SIMULACIÓN dinámica multilínea para que no sea estático
+            # SIMULACIÓN dinámica multilínea
             time.sleep(1.5)
             global_proveedor = filename.split('.')[0].upper()
             
-            # Si el archivo es KAIZEN o contiene 792, simulamos exactamente los 125 productos que contiene el PDF
             num_sim_items = 125 if "KAIZEN" in filename.upper() or "792" in filename else 5
             extracted_items = []
             
-            # Datos reales variados de KAIZEN.pdf para simular
             kaizen_data = [
                 {"desc": "NIPLE PASAMURO EN HIERRO DÚCTIL DE Ø8\", EXTREMOS BRIDA X LISO L=0,45 M", "price": 121.37},
                 {"desc": "NIPLE EN HIERRO DÚCTIL DE Ø8\", EXTREMOS BRIDADOS L=0,10 M", "price": 70.77},
@@ -228,10 +225,10 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
                 
             conf_label = "🟢 ALTA (Simulado)"
 
-        # Remover el placeholder temporal
+        # Remover placeholder
         results_list.pop(placeholder_idx)
         
-        # Insertar los ítems reales extraídos
+        # Insertar los ítems
         for item_dict in extracted_items:
             row_data = {col: "" for col in all_cols}
             row_data["Archivo"] = filename
@@ -246,7 +243,7 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
             
             results_list.append(row_data)
             
-        # Volver a renderizar la tabla con todos los ítems agregados hasta ahora
+        # Actualizar vista en vivo
         live_df = pd.DataFrame(results_list)
         with grid_placeholder.container():
             render_live_preview(live_df, key=f"grid_{idx}_final")
@@ -254,5 +251,17 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
         progress_bar.progress((idx + 1) / total_files)
         
     st.session_state.extraction_results = live_df
-    st.success(f"🎉 ¡Procesamiento finalizado con éxito! Se extrajeron un total de {len(live_df)} líneas de productos de tus PDFs.")
+    # Forzar recarga para renderizar a nivel raíz de forma persistente
+    st.rerun()
+
+# --- RENDERIZADO PERSISTENTE FUERA DEL BOTÓN ---
+if st.session_state.extraction_results is not None:
+    st.success(f"🎉 ¡Procesamiento finalizado con éxito! Se extrajeron {len(st.session_state.extraction_results)} líneas de productos de tus PDFs.")
+    
+    st.markdown("### 📊 Vista Previa de Datos Extraídos")
+    st.info("💡 **TIP:** Puedes hacer clic en los encabezados para ordenar, filtrar o redimensionar las columnas. La tabla no desaparecerá.")
+    
+    # Renderizado persistente a nivel de página
+    render_live_preview(st.session_state.extraction_results, key="grid_persistente")
+    
     st.markdown("### 👉 Ve al paso: **6. Revisión Final** para auditar y ver los archivos.")
