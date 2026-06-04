@@ -8,19 +8,22 @@ No necesitas saber de programación. Solo sigue los pasos en la barra lateral.
 """)
 
 st.header("1️⃣ Configuración Inicial")
-st.info("Para que la Inteligencia Artificial funcione, necesitamos tus llaves de acceso (API Keys). Solo se guardan localmente en tu computadora.")
+st.info("Para que la Inteligencia Artificial funcione, necesitamos conectarla. No te preocupes, usaremos los servicios GRATUITOS.")
 
-gemini_key = st.text_input("Google Gemini API Key (Extractor Principal):", type="password", value=os.getenv("GEMINI_API_KEY", ""))
-nvidia_key = st.text_input("NVIDIA NIM API Key (Revisor / 2da opinión):", type="password", value=os.getenv("NVIDIA_API_KEY", ""))
+st.markdown("Obtén tu llave gratuita aquí: [Google AI Studio](https://aistudio.google.com/app/apikey)")
+gemini_key = st.text_input("Llave Gratuita de Google Gemini:", type="password", value=os.getenv("GEMINI_API_KEY", ""))
 
-if st.button("Guardar y Probar Conexión"):
+st.markdown("Obtén tu llave gratuita aquí: [NVIDIA Build](https://build.nvidia.com/)")
+nvidia_key = st.text_input("Llave Gratuita de NVIDIA (Opcional):", type="password", value=os.getenv("NVIDIA_API_KEY", ""))
+
+if st.button("Guardar y Continuar"):
     if gemini_key:
-        # En producción esto escribiría en el .env
         os.environ["GEMINI_API_KEY"] = gemini_key
         st.session_state.api_keys_configured = True
-        st.success("✅ ¡Llaves configuradas! Gemini está listo.")
+        st.success("✅ ¡Configurado! Ya puedes usar la IA gratis.")
     else:
-        st.error("⚠️ La llave de Gemini es obligatoria.")
+        st.warning("⚠️ Sería ideal poner la llave, pero puedes continuar para probar la plataforma con datos simulados.")
+        st.session_state.api_keys_configured = True
 
 st.divider()
 if st.session_state.get("api_keys_configured"):

@@ -10,6 +10,13 @@ if "api_keys_configured" not in st.session_state:
 if "session_id" not in st.session_state:
     st.session_state.session_id = None
 
+# Ocultar botón Deploy para no confundir al usuario
+st.markdown("""
+    <style>
+    .stAppDeployButton {display:none;}
+    </style>
+""", unsafe_allow_html=True)
+
 # Definir páginas
 p1 = st.Page("ui/pages/01_bienvenida.py", title="1. Configuración", icon="⚙️")
 p2 = st.Page("ui/pages/02_origen_datos.py", title="2. Origen de Datos", icon="📥")

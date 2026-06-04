@@ -18,7 +18,29 @@ elif opcion.startswith("📧"):
         st.session_state.data_source = "gmail"
         st.session_state.email_pdfs = ["cotizacion_1.pdf", "cotizacion_2.pdf"] # mock
 elif opcion.startswith("🔗"):
-    st.info("Inicia el script `run_api.py` en tu terminal para habilitar los Endpoints REST para tu ERP.")
+    st.info("Para que tu ERP (como SAP o similar) pueda enviarnos cotizaciones, necesitamos prender un servidor interno.")
+    
+    # Botón para arrancar el servidor usando subprocess
+    if "api_running" not in st.session_state:
+        st.session_state.api_running = False
+        
+    if not st.session_state.api_running:
+        if st.button("🚀 Encender Servidor API"):
+            import subprocess
+            import sys
+            import os
+            # Lanzamos run_api.py en background
+            script_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "run_api.py"))
+            subprocess.Popen([sys.executable, script_path])
+            st.session_state.api_running = True
+            st.rerun()
+    else:
+        st.success("✅ El Servidor API está corriendo en http://localhost:8000")
+        st.markdown("Tu ERP ya puede hacer peticiones `POST` a `/upload/`.")
+        if st.button("🛑 Apagar Servidor"):
+            st.session_state.api_running = False
+            st.rerun()
+            
     st.session_state.data_source = "api"
 
 st.divider()
