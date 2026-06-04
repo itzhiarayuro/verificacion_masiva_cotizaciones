@@ -118,18 +118,60 @@ else:
                                 text = parse_res.get("text", "")
                                 is_difficult = parse_res.get("is_difficult", False)
                                 
-                                instructions = f"Extrae los siguientes campos: {', '.join(non_control_cols)}. Pista adicional: {pista}."
+                                item_fields = [col for col in st.session_state.extraction_results.columns if col not in ["Archivo", "Confianza", "Estado", "Proveedor"]]
+                                
+                                # Pedir lista de productos completa con pista
+                                instructions = f"""
+                                Identifica el Proveedor de la cotización y extrae la lista de TODOS los productos/materiales.
+                                Retorna UNICAMENTE un objeto JSON con esta estructura exacta:
+                                {{
+                                  "proveedor": "Nombre comercial",
+                                  "items": [
+                                    {{
+                                      {", ".join([f'"{f}": "valor"' for f in item_fields])}
+                                    }}
+                                  ]
+                                }}
+                                Pista adicional: {pista}
+                                """
                                 
                                 extraction = orchestrator.process_document(text, is_difficult, instructions)
-                                extracted_data = extraction.get("data", {})
+                                extracted_json = extraction.get("data", {})
+                                global_proveedor = extracted_json.get("proveedor", "Desconocido")
+                                extracted_items = extracted_json.get("items", [])
                                 
-                                # Actualizar la fila en el DataFrame
-                                for col in non_control_cols:
-                                    st.session_state.extraction_results.at[idx, col] = extracted_data.get(col, "")
+                                if not isinstance(extracted_items, list) or not extracted_items:
+                                    extracted_items = [{}]
                                 
-                                st.session_state.extraction_results.at[idx, "Confianza"] = f"🟢 ALTA (Re-extraído)"
-                                st.session_state.extraction_results.at[idx, "Estado"] = "✅ Completado"
-                                st.success("¡Extracción exitosa con la pista!")
+                                # Limpiar las filas antiguas de este archivo
+                                df_results = st.session_state.extraction_results
+                                df_clean = df_results[df_results["Archivo"] != selected_pdf_name]
+                                
+                                # Generar nuevas filas
+                                new_rows = []
+                                confidence = extraction.get("confidence", "LOW")
+                                source_name = extraction.get("source", "IA")
+                                conf_label = f"🟢 ALTA ({source_name})" if confidence == "HIGH" else f"🟡 MEDIA ({source_name})"
+                                
+                                for item_dict in extracted_items:
+                                    row_data = {col: "" for col in df_results.columns}
+                                    row_data["Archivo"] = selected_pdf_name
+                                    row_data["Confianza"] = conf_label
+                                    row_data["Estado"] = "✅ Completado"
+                                    
+                                    for col in df_results.columns:
+                                        if col not in ["Archivo", "Confianza", "Estado"]:
+                                            if col.lower() == "proveedor":
+                                                row_data[col] = global_proveedor
+                                            else:
+                                                row_data[col] = item_dict.get(col, "")
+                                    new_rows.append(row_data)
+                                
+                                # Concatenar
+                                df_new_rows = pd.DataFrame(new_rows)
+                                st.session_state.extraction_results = pd.concat([df_clean, df_new_rows], ignore_index=True)
+                                
+                                st.success("¡Re-extracción exitosa con la pista!")
                                 st.rerun()
                             except Exception as e:
                                 st.error(f"Error al re-procesar con la IA: {e}")
@@ -139,13 +181,24 @@ else:
                             import time
                             time.sleep(time_delay)
                             
-                            # Simular que con la pista se resolvió la duda
-                            for col in non_control_cols:
-                                if "valor" in col.lower() or "precio" in col.lower() or "total" in col.lower():
-                                    st.session_state.extraction_results.at[idx, col] = "99999" # Cambiar a un valor simulado
+                            df_results = st.session_state.extraction_results
+                            df_clean = df_results[df_results["Archivo"] != selected_pdf_name]
+                            df_old = df_results[df_results["Archivo"] == selected_pdf_name]
                             
-                            st.session_state.extraction_results.at[idx, "Confianza"] = "🟢 ALTA (Simulado con Pista)"
-                            st.session_state.extraction_results.at[idx, "Estado"] = "✅ Completado"
+                            new_rows = []
+                            for _, row in df_old.iterrows():
+                                row_dict = row.to_dict()
+                                for col in df_results.columns:
+                                    if col not in ["Archivo", "Confianza", "Estado"] and col.lower() != "proveedor":
+                                        if "valor" in col.lower() or "precio" in col.lower() or "total" in col.lower():
+                                            row_dict[col] = "99999" # Cambiar a un valor simulado actualizado
+                                row_dict["Confianza"] = "🟢 ALTA (Simulado con Pista)"
+                                row_dict["Estado"] = "✅ Completado"
+                                new_rows.append(row_dict)
+                            
+                            df_new_rows = pd.DataFrame(new_rows)
+                            st.session_state.extraction_results = pd.concat([df_clean, df_new_rows], ignore_index=True)
+                            
                             st.success("¡Re-extracción simulada con éxito usando tu pista!")
                             st.rerun()
         else:

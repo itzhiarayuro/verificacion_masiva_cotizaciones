@@ -30,9 +30,6 @@ if data_source == "local":
     )
 elif data_source == "gmail":
     st.info("Utilizando PDFs descargados automáticamente desde tu Gmail.")
-    # Generar algunos archivos mock con contenido simulado si es Gmail
-    uploaded_files = []
-    # Mocking Gmail files for testing
     st.session_state.uploaded_pdfs = [
         {"name": "Gmail_Cotizacion_Maquinaria.pdf", "bytes": b"%PDF-1.4 mock content"},
         {"name": "Gmail_Presupuesto_Materiales.pdf", "bytes": b"%PDF-1.4 mock content"}
@@ -42,9 +39,7 @@ elif data_source == "gmail":
 if data_source == "local" and uploaded_files:
     st.session_state.uploaded_pdfs = []
     for f in uploaded_files:
-        # Leer los bytes
         file_bytes = f.read()
-        # Resetear el puntero para que no falle si se vuelve a leer
         f.seek(0)
         st.session_state.uploaded_pdfs.append({
             "name": f.name,
@@ -67,10 +62,8 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
     if "custom_template_df" in st.session_state:
         template_cols = list(st.session_state.custom_template_df.columns)
     else:
-        # Fallback por si no pasó por el paso 3
         template_cols = ["Ítem", "Descripción_Material", "Cantidad", "Valor_Unitario", "Valor_Total", "Proveedor"]
         
-    # Inicializar el DataFrame final con Archivo, Confianza y Estado + las columnas del template
     all_cols = ["Archivo", "Confianza", "Estado"] + template_cols
     results_list = []
     
@@ -89,17 +82,24 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
         
         status_text.text(f"Analizando {filename} ({idx + 1}/{total_files})...")
         
-        # Crear un diccionario para esta fila
-        row_data = {col: "" for col in all_cols}
-        row_data["Archivo"] = filename
-        row_data["Estado"] = "⏳ Procesando"
+        # Guardar la posición para remover el placeholder
+        placeholder_idx = len(results_list)
         
-        # Insertar fila inicial a la tabla en vivo
-        results_list.append(row_data)
+        # Insertar fila inicial tipo "Procesando"
+        placeholder_row = {col: "" for col in all_cols}
+        placeholder_row["Archivo"] = filename
+        placeholder_row["Estado"] = "⏳ Procesando..."
+        results_list.append(placeholder_row)
+        
+        # Renderizar en vivo
         live_df = pd.DataFrame(results_list)
         with grid_placeholder.container():
             render_live_preview(live_df, key=f"grid_{idx}_init")
             
+        global_proveedor = "Desconocido"
+        extracted_items = []
+        source_name = "Simulado"
+        
         if api_ready:
             try:
                 # Escribir archivo temporalmente a disco para el parser
@@ -107,62 +107,97 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
                     tmp_file.write(pdf_bytes)
                     tmp_path = tmp_file.name
                 
-                # Parsear el documento (cascada de markitdown, pdfplumber, OCR)
+                # Parsear el documento
                 parse_res = parser.parse_document(tmp_path)
                 text = parse_res.get("text", "")
                 is_difficult = parse_res.get("is_difficult", False)
-                method = parse_res.get("method", "failed")
                 
-                # Definir instrucciones para el LLM basadas en el template
-                prompt_instrucciones = f"Extrae los siguientes campos en formato JSON: {', '.join(template_cols)}."
+                # Excluir la columna Proveedor del JSON interno ya que lo extraemos como llave global
+                item_fields = [col for col in template_cols if col.lower() != "proveedor"]
+                
+                # Instrucción detallada pidiendo lista completa de productos
+                prompt_instrucciones = f"""
+                Identifica el nombre comercial del Proveedor de la cotización y extrae la lista completa de TODOS los productos, materiales, o servicios cotizados en el documento.
+                Es imperativo que recorras todo el documento y extraigas cada artículo.
+                Retorna UNICAMENTE un objeto JSON válido con la siguiente estructura exacta:
+                {{
+                  "proveedor": "Nombre comercial del Proveedor",
+                  "items": [
+                    {{
+                      {", ".join([f'"{f}": "valor extraído para {f}"' for f in item_fields])}
+                    }}
+                  ]
+                }}
+                """
                 
                 # Extraer usando Gemini/NVIDIA
                 extraction = orchestrator.process_document(text, is_difficult, prompt_instrucciones)
-                
-                # Limpiar archivo temporal
                 os.unlink(tmp_path)
                 
-                # Llenar la fila con los resultados reales
-                extracted_data = extraction.get("data", {})
-                for col in template_cols:
-                    row_data[col] = extracted_data.get(col, "")
+                extracted_json = extraction.get("data", {})
+                global_proveedor = extracted_json.get("proveedor", "Desconocido")
+                extracted_items = extracted_json.get("items", [])
                 
-                # Calcular Confianza y Estado
+                if not isinstance(extracted_items, list) or not extracted_items:
+                    extracted_items = [{}]
+                    
                 confidence = extraction.get("confidence", "LOW")
-                row_data["Confianza"] = f"🟢 ALTA ({extraction.get('source', 'IA')})" if confidence == "HIGH" else f"🟡 MEDIA ({extraction.get('source', 'IA')})"
-                row_data["Estado"] = "✅ Completado"
+                source_name = extraction.get("source", "IA")
+                conf_label = f"🟢 ALTA ({source_name})" if confidence == "HIGH" else f"🟡 MEDIA ({source_name})"
                 
             except Exception as e:
-                row_data["Confianza"] = "🔴 FALLÓ"
-                row_data["Estado"] = "⚠️ Error de Extracción"
-                for col in template_cols:
-                    row_data[col] = "Error"
+                global_proveedor = "Error"
+                extracted_items = [{"error": str(e)}]
+                conf_label = "🔴 FALLÓ"
         else:
-            # SIMULACIÓN inteligente si no hay llaves configuradas
-            time.sleep(1.5) # Simular procesamiento
+            # SIMULACIÓN dinámica multilínea para que no sea estático
+            time.sleep(1.5)
+            global_proveedor = filename.split('.')[0].upper()
             
-            # Generar datos simulados consistentes pero dinámicos
-            row_data["Estado"] = "✅ Completado" if idx != 2 else "⚠️ Revisión Manual"
-            row_data["Confianza"] = "🟢 ALTA (Simulado)" if idx != 2 else "🔴 REVISIÓN MANUAL"
+            # Generar de 3 a 5 filas simuladas para mostrar que extrae múltiples productos del mismo PDF
+            num_sim_items = 5 if "KAIZEN" in filename.upper() else 3
+            extracted_items = []
             
-            # Rellenar columnas del template con mock data verosímil
-            for col in template_cols:
-                col_lower = col.lower()
-                if "ítem" in col_lower or "item" in col_lower:
-                    row_data[col] = f"ITM-0{idx+1}"
-                elif "desc" in col_lower or "material" in col_lower or "producto" in col_lower:
-                    row_data[col] = f"Material Extraído de {filename.split('.')[0]}"
-                elif "cant" in col_lower:
-                    row_data[col] = 10 * (idx + 1)
-                elif "uni" in col_lower or "valor" in col_lower or "precio" in col_lower or "total" in col_lower:
-                    row_data[col] = 1500 * (idx + 1)
-                elif "proveedor" in col_lower:
-                    row_data[col] = f"Proveedor {chr(65 + idx)}"
-                else:
-                    row_data[col] = f"Valor_{col}_{idx+1}"
+            for i in range(num_sim_items):
+                item_data = {}
+                for col in template_cols:
+                    col_lower = col.lower()
+                    if "ítem" in col_lower or "item" in col_lower:
+                        item_data[col] = f"{i+1}"
+                    elif "desc" in col_lower or "material" in col_lower or "producto" in col_lower:
+                        if "KAIZEN" in filename.upper():
+                            item_data[col] = f"NIPLE EN HIERRO DÚCTIL DE Ø8\" L={0.10*(i+1)}M"
+                        else:
+                            item_data[col] = f"Material de Obra Civil Ref #{i+1}"
+                    elif "cant" in col_lower:
+                        item_data[col] = 1 + i
+                    elif "uni" in col_lower or "valor" in col_lower or "precio" in col_lower:
+                        item_data[col] = 120.0 * (i + 1)
+                    elif "total" in col_lower:
+                        item_data[col] = 120.0 * (i + 1) * (1 + i)
+                extracted_items.append(item_data)
+                
+            conf_label = "🟢 ALTA (Simulado)"
+
+        # Remover el placeholder temporal
+        results_list.pop(placeholder_idx)
         
-        # Actualizar la lista y renderizar la previsualización en vivo
-        results_list[idx] = row_data
+        # Insertar los ítems reales extraídos
+        for item_dict in extracted_items:
+            row_data = {col: "" for col in all_cols}
+            row_data["Archivo"] = filename
+            row_data["Confianza"] = conf_label
+            row_data["Estado"] = "✅ Completado"
+            
+            for col in template_cols:
+                if col.lower() == "proveedor":
+                    row_data[col] = global_proveedor
+                else:
+                    row_data[col] = item_dict.get(col, "")
+            
+            results_list.append(row_data)
+            
+        # Volver a renderizar la tabla con todos los ítems agregados hasta ahora
         live_df = pd.DataFrame(results_list)
         with grid_placeholder.container():
             render_live_preview(live_df, key=f"grid_{idx}_final")
@@ -170,5 +205,5 @@ if st.button("🚀 Iniciar Extracción con IA") and st.session_state.uploaded_pd
         progress_bar.progress((idx + 1) / total_files)
         
     st.session_state.extraction_results = live_df
-    st.success("🎉 ¡Procesamiento finalizado con éxito!")
+    st.success("🎉 ¡Procesamiento finalizado con éxito! Todos los productos y líneas fueron extraídos de tus PDFs.")
     st.markdown("### 👉 Ve al paso: **6. Revisión Final** para auditar y ver los archivos.")

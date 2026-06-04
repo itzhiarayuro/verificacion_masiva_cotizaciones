@@ -58,9 +58,18 @@ class LLMOrchestrator:
             response_text = response.text.replace("```json", "").replace("```", "").strip()
             data = json.loads(response_text)
             
-            # Evaluar confianza: Si todo es null, la confianza es baja.
-            is_empty = all(v is None for v in data.values())
-            confidence = "LOW" if is_empty else "HIGH"
+            # Evaluar confianza: Si no hay ítems o todos están vacíos, la confianza es baja
+            items = data.get("items", [])
+            if not items or not isinstance(items, list):
+                confidence = "LOW"
+            else:
+                all_null = True
+                for item in items:
+                    for k, v in item.items():
+                        if v is not None and str(v).strip() != "":
+                            all_null = False
+                            break
+                confidence = "LOW" if all_null else "HIGH"
 
             return {
                 "data": data,
