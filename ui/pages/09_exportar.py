@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from core.reconciliation_engine import ReconciliationEngine
 from core.extraction.pdf_pipeline import CSV_COLUMNS
 
-st.title("💾 8. Exportación Final")
+st.title("💾 9. Exportación Final")
 st.markdown("Todos tus datos han sido procesados y confirmados. Descarga en Excel o CSV consolidado (formato Grok).")
 
 if "extraction_results" not in st.session_state or st.session_state.extraction_results.empty:

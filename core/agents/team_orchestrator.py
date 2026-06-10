@@ -8,13 +8,17 @@ from .roles import AGENT_ROSTER, LEAD_AGENT_ID
 
 class AgentTeamOrchestrator:
     """
-    Equipo autónomo de 24 agentes. El Senior Developer encabeza el flujo.
+    Equipo autónomo de 24 agentes (simulado para UI + logs).
+    El Senior Developer encabeza el flujo.
     Cada agente reporta estado en tiempo real vía callback.
+
+    Now also supports llm_mode for the new job system.
+    Old process_batch path remains for small interactive runs in Streamlit.
     """
 
-    def __init__(self, use_llm: bool = True):
+    def __init__(self, use_llm: bool = True, llm_mode: str | None = None):
         self.roster = AGENT_ROSTER
-        self.pipeline = PDFExtractionPipeline(use_llm=use_llm)
+        self.pipeline = PDFExtractionPipeline(use_llm=use_llm, llm_mode=llm_mode)
         self.qa = LiveQARunner()
         self.agent_logs: List[Dict[str, Any]] = []
         self.agent_status: Dict[str, str] = {a.id: "idle" for a in self.roster}
@@ -46,10 +50,18 @@ class AgentTeamOrchestrator:
         self,
         pdf_list: List[Dict[str, Any]],
         on_event: Optional[Callable[[Dict[str, Any]], None]] = None,
+        llm_mode: str | None = None,
     ) -> Dict[str, Any]:
+        """Legacy small-batch path (still used by Streamlit live preview for < few hundred PDFs).
+        For 1M+ use JobManager + workers instead.
+        """
         def emit(event: Dict):
             if on_event:
                 on_event(event)
+
+        if llm_mode:
+            # Re-create pipeline with desired mode for this run
+            self.pipeline = PDFExtractionPipeline(use_llm=bool(llm_mode != "none"), llm_mode=llm_mode)
 
         self._set_status(LEAD_AGENT_ID, "active", f"Coordinando extracción de {len(pdf_list)} PDFs")
         emit({"type": "lead_start", "total": len(pdf_list), "agents": len(self.roster)})

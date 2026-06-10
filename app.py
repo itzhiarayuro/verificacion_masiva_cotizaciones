@@ -27,6 +27,7 @@ p6 = st.Page("ui/pages/06_revision.py", title="6. Revisión Final", icon="✅")
 p7 = st.Page("ui/pages/07_comparacion.py", title="7. Comparación Excel ↔ PDFs", icon="🔍")
 p8 = st.Page("ui/pages/08_equipo_agentes.py", title="8. Equipo Agentes", icon="🤖")
 p9 = st.Page("ui/pages/09_exportar.py", title="9. Exportar", icon="💾")
+p10 = st.Page("ui/pages/09_jobs_y_email.py", title="10. Jobs + Email (Escala)", icon="🚀")
 
-pg = st.navigation([p1, p2, p3, p4, p5, p6, p7, p8, p9])
+pg = st.navigation([p1, p2, p3, p4, p5, p6, p7, p8, p9, p10])
 pg.run()

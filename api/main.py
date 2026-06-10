@@ -17,16 +17,24 @@ from .webhooks import send_webhook
 import sys
 sys.path.append(str(Path(__file__).resolve().parent.parent))
 from core.agents.team_orchestrator import AgentTeamOrchestrator
+from core.job_manager import get_job_manager
+from core.db import init_db
 
 app = FastAPI(
-    title="Auditor de Cotizaciones API - Real",
-    description="API REST que usa el mismo orquestador de 24 agentes + pipeline Grok-style que la UI",
-    version="3.1.0"
+    title="Auditor de Cotizaciones API - Real + Jobs",
+    description="API REST + nuevo sistema de Jobs escalable (JobManager + workers). "
+                "Legacy in-memory paths preserved for small interactive use. "
+                "Usa el mismo pipeline de 24-agentes + extracción Grok-style.",
+    version="4.0.0"
 )
 
-# In-memory session store (for demo; in prod use Redis/DB)
+# In-memory session store (for demo/small use; production uses Job + DB)
 sessions_db = {}
 logger = logging.getLogger(__name__)
+
+# Initialize new DB on API startup (safe, idempotent)
+init_db()
+job_mgr = get_job_manager()
 
 
 def _load_pdf_bytes_from_paths(paths: List[str]) -> List[dict]:
@@ -199,6 +207,115 @@ async def get_results(session_id: str):
     )
 
 
+# ===================== NEW SCALABLE JOB ENDPOINTS =====================
+
+@app.post("/api/v1/jobs", tags=["jobs"])
+async def create_job_from_upload(
+    background_tasks: BackgroundTasks,
+    files: List[UploadFile] = File(...),
+    llm_mode: str = Form("fallback"),
+    batch_size: int = Form(50),
+    notify_email: Optional[str] = Form(None),
+    webhook_url: Optional[str] = Form(None),
+):
+    """Create a real Job (persisted). PDFs go to object storage. Workers will process."""
+    if not files:
+        raise HTTPException(400, "No files")
+
+    pdf_list = []
+    for uf in files:
+        if not uf.filename.lower().endswith(".pdf"):
+            continue
+        content = await uf.read()
+        pdf_list.append({"name": uf.filename, "bytes": content})
+
+    if not pdf_list:
+        raise HTTPException(400, "No valid PDFs")
+
+    job = job_mgr.create_upload_job(
+        pdf_list,
+        llm_mode=llm_mode,
+        batch_size=batch_size,
+        notify_email=notify_email,
+        webhook_url=webhook_url,
+    )
+    # Optionally auto-enqueue a first batch (the worker will keep advancing it)
+    # For demo we can start background processing here too:
+    background_tasks.add_task(job_mgr.process_job_small_batch, job.id, max_files=batch_size)
+
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "total_files": job.total_files,
+        "llm_mode": job.llm_mode,
+        "message": "Job created. Use /jobs/{id}/status or run the worker to process.",
+        "storage_prefix": job.storage_prefix,
+    }
+
+
+@app.get("/api/v1/jobs/{job_id}/status", tags=["jobs"])
+async def get_job_status(job_id: str):
+    from core.db import get_job
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    return {
+        "job_id": job.id,
+        "status": job.status,
+        "progress_pct": job.progress_pct,
+        "processed_files": job.processed_files,
+        "total_files": job.total_files,
+        "total_rows": job.total_rows,
+        "llm_mode": job.llm_mode,
+        "source_type": job.source_type,
+    }
+
+
+@app.post("/api/v1/jobs/ingest-email", tags=["jobs", "email"])
+async def ingest_email_job(
+    query: str = Form("has:attachment filename:pdf"),
+    max_messages: int = Form(100),
+    llm_mode: str = Form("fallback"),
+    notify_email: Optional[str] = Form(None),
+):
+    """Create a Job by ingesting PDFs from Gmail (real, paginated)."""
+    from core.email_ingest import ingest_gmail_to_job
+    job = ingest_gmail_to_job(
+        query=query,
+        max_messages=max_messages,
+        llm_mode=llm_mode,
+        notify_email=notify_email,
+    )
+    # Kick off first batch
+    job_mgr.process_job_small_batch(job.id, max_files=30)
+    return {"job_id": job.id, "status": job.status, "message": "Email ingest job created and first batch started."}
+
+
+@app.get("/api/v1/jobs", tags=["jobs"])
+async def list_recent_jobs(limit: int = 20):
+    from core.db import list_jobs
+    jobs = list_jobs(limit=limit)
+    return [
+        {
+            "id": j.id,
+            "status": j.status,
+            "created_at": j.created_at.isoformat() if j.created_at else None,
+            "total_files": j.total_files,
+            "processed_files": j.processed_files,
+            "total_rows": j.total_rows,
+            "llm_mode": j.llm_mode,
+            "source_type": j.source_type,
+        }
+        for j in jobs
+    ]
+
+
 @app.get("/health")
 async def health():
-    return {"status": "ok", "agents": 24, "engine": "real-pipeline"}
+    return {
+        "status": "ok",
+        "agents": 24,
+        "engine": "real-pipeline + JobManager",
+        "db": "sqlite or DATABASE_URL",
+        "storage": "local (or minio)",
+    }

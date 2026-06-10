@@ -12,11 +12,10 @@ if opcion.startswith("📂"):
     st.info("Perfecto. En el paso 5 podrás arrastrar tus PDFs.")
     st.session_state.data_source = "local"
 elif opcion.startswith("📧"):
-    st.warning("Esta opción requiere autenticar tu cuenta de Google.")
-    if st.button("Conectar con Gmail"):
-        st.success("Simulación: ¡Gmail conectado exitosamente! Hemos encontrado 15 PDFs recientes.")
-        st.session_state.data_source = "gmail"
-        st.session_state.email_pdfs = ["cotizacion_1.pdf", "cotizacion_2.pdf"] # mock
+    st.info("Ahora usa la página **10. Jobs + Email (Escala)** para ingesta real desde Gmail (paginada, con jobs).")
+    st.caption("El flujo antiguo era simulado. El nuevo usa EmailReader completo + JobManager.")
+    if st.button("Ir a Jobs + Email"):
+        st.switch_page("ui/pages/09_jobs_y_email.py")  # Streamlit 1.28+ supports this
 elif opcion.startswith("🔗"):
     st.info("Para que tu ERP (como SAP o similar) pueda enviarnos cotizaciones, necesitamos prender un servidor interno.")
     

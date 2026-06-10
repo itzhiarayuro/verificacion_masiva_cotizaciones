@@ -56,7 +56,8 @@ else:
 st.markdown("### 🤖 Equipo autónomo (24 agentes)")
 st.caption("Encabezado por Senior Developer · Incluye Data Engineering, QA live, OCR, Procurement, UI y más.")
 
-if st.button("🚀 Iniciar Extracción Masiva (estilo Grok)") and st.session_state.uploaded_pdfs:
+if st.button("🚀 Iniciar Extracción Masiva (estilo Grok) - MODO PEQUEÑO") and st.session_state.uploaded_pdfs:
+    st.caption("Este es el camino legacy (bueno para < 300-500 PDFs). Para volumen grande ve a página 10 (Jobs + workers).")
     api_ready = st.session_state.get("api_keys_configured", False) and os.getenv("GEMINI_API_KEY")
 
     progress_bar = st.progress(0)
