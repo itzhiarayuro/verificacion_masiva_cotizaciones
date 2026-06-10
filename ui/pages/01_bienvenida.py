@@ -3,7 +3,8 @@ import os
 
 st.title("👋 Bienvenido al Auditor de Cotizaciones V3")
 st.markdown("""
-Esta herramienta te ahorrará cientos de horas extrayendo datos de PDFs e imágenes automáticamente hacia tu archivo Excel.
+Esta herramienta te ahorrará cientos de horas extrayendo **TODOS** los productos de cada PDF (1 fila por ítem, estilo Grok) hacia Excel/CSV.
+Cuenta con un **equipo autónomo de 24 agentes IA** (Senior Developer, Data Engineering, QA, OCR, Procurement, UI y más).
 No necesitas saber de programación. Solo sigue los pasos en la barra lateral.
 """)
 

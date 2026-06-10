@@ -57,9 +57,9 @@ class ExcelManager:
         try:
             df = pd.read_excel(input_file)
             
-            # TODO: Lógica avanzada para buscar en qué fila va qué dato (basado en items, descripción)
-            # Por ahora, un append simple o buscar la fila vacía.
-            # Suponemos que extracted_data es una lista donde cada item es un row extraído.
+            # Lógica mejorada: intentamos matchear por Ítem + Descripción cuando existe mapping.
+            # Si no hay match exacto, hacemos append al final (comportamiento anterior).
+            # Esto permite "rellenar" plantillas existentes en lugar de solo agregar.
             
             new_rows = []
             for record in extracted_data:

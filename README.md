@@ -25,3 +25,23 @@ Automatiza la extracción de datos financieros de miles de cotizaciones en PDF o
 
 ## 📖 Documentación Completa
 Revisa la carpeta `specs/` para ver la arquitectura detallada (Spec-Driven Development).
+
+## 🧪 Tests
+Se incluye una suite de tests reales (pytest):
+
+- `tests/test_live_qa.py` — QA en tiempo real
+- `tests/test_table_extractor.py`, `test_metadata_extractor.py`, `test_pdf_pipeline.py`
+- `tests/test_agents.py` — 24 agentes + orquestador
+- `tests/test_reconciliation.py` — Motor de auditoría de precios
+- `tests/test_integration_real_pdf.py` — Integración con PDFs reales del proyecto (usa `temp_pdf_viewer/KAIZEN.pdf`)
+
+**Ejecutar tests:**
+- Windows: `run_tests.bat`
+- Linux/Mac: `./run_tests.sh`
+
+O manualmente:
+```bash
+python -m pytest tests/ -q
+```
+
+Los tests funcionan sin claves de API (usan `use_llm=False` donde es posible). Los tests de integración marcados con `@pytest.mark.integration` se saltan si no encuentran los PDFs de ejemplo.

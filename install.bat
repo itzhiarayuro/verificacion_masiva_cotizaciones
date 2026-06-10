@@ -21,6 +21,10 @@ pip install -r requirements.txt
 
 echo ==============================================
 echo ¡Instalacion Completada!
+echo.
+echo Para ejecutar los tests (pytest):
+echo   run_tests.bat
+echo.
 echo Iniciando la aplicacion web...
 echo ==============================================
 streamlit run app.py

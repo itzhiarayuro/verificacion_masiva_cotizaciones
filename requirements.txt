@@ -18,3 +18,17 @@ google-auth-httplib2>=0.2.0
 google-api-python-client>=2.146.0
 msal>=1.31.0
 pydantic>=2.9.2
+pdf2image>=1.17.0
+pytest>=8.0.0
+pytest-mock>=3.14.0
+
+# === Scaling & Production (1M PDFs + Jobs + Email) ===
+sqlalchemy>=2.0
+redis>=5.0
+celery[redis]>=5.4
+minio>=7.2
+# pyarrow recommended for Parquet result shards (pandas.to_parquet uses it)
+pyarrow>=15.0
+# Optional but recommended for full stack (see docker-compose.yml)
+# psycopg2-binary>=2.9   # for Postgres
+# alembic>=1.13          # for migrations when using Postgres
