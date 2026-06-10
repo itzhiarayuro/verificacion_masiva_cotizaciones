@@ -19,6 +19,9 @@ sys.path.append(str(Path(__file__).resolve().parent.parent))
 from core.agents.team_orchestrator import AgentTeamOrchestrator
 from core.job_manager import get_job_manager
 from core.db import init_db
+from core.observability import set_correlation_id, get_logger
+
+logger = get_logger(__name__)
 
 app = FastAPI(
     title="Auditor de Cotizaciones API - Real + Jobs",
@@ -239,16 +242,25 @@ async def create_job_from_upload(
         notify_email=notify_email,
         webhook_url=webhook_url,
     )
-    # Optionally auto-enqueue a first batch (the worker will keep advancing it)
-    # For demo we can start background processing here too:
-    background_tasks.add_task(job_mgr.process_job_small_batch, job.id, max_files=batch_size)
+    set_correlation_id(job.id)
+    logger.info("Job created via API", extra={"job_id": job.id, "total_files": job.total_files})
+
+    # Phase 2: support real Celery enqueue when enabled
+    use_celery = (os.getenv("USE_CELERY", "false").lower() == "true")
+    if use_celery:
+        from core.job_manager import enqueue_job_batch
+        enq = enqueue_job_batch(job.id, max_files=batch_size, force_celery=True)
+        msg = f"Job created + enqueued via Celery ({enq.get('mode')})."
+    else:
+        background_tasks.add_task(job_mgr.process_job_small_batch, job.id, max_files=batch_size)
+        msg = "Job created. First batch kicked. Run simple_worker or Celery workers to continue."
 
     return {
         "job_id": job.id,
         "status": job.status,
         "total_files": job.total_files,
         "llm_mode": job.llm_mode,
-        "message": "Job created. Use /jobs/{id}/status or run the worker to process.",
+        "message": msg,
         "storage_prefix": job.storage_prefix,
     }
 
@@ -286,9 +298,16 @@ async def ingest_email_job(
         llm_mode=llm_mode,
         notify_email=notify_email,
     )
-    # Kick off first batch
-    job_mgr.process_job_small_batch(job.id, max_files=30)
-    return {"job_id": job.id, "status": job.status, "message": "Email ingest job created and first batch started."}
+    use_celery = (os.getenv("USE_CELERY", "false").lower() == "true")
+    if use_celery:
+        from core.job_manager import enqueue_job_batch
+        enq = enqueue_job_batch(job.id, max_files=30, force_celery=True)
+        msg = f"Email ingest job created + enqueued via Celery ({enq.get('mode')})."
+    else:
+        job_mgr.process_job_small_batch(job.id, max_files=30)
+        msg = "Email ingest job created and first batch started. Run workers to continue."
+
+    return {"job_id": job.id, "status": job.status, "message": msg}
 
 
 @app.get("/api/v1/jobs", tags=["jobs"])
@@ -305,9 +324,47 @@ async def list_recent_jobs(limit: int = 20):
             "total_rows": j.total_rows,
             "llm_mode": j.llm_mode,
             "source_type": j.source_type,
+            "result_manifest_key": j.result_manifest_key,
         }
         for j in jobs
     ]
+
+
+@app.post("/api/v1/jobs/{job_id}/export", tags=["jobs"])
+async def trigger_export(
+    job_id: str,
+    formats: str = "parquet,xlsx",
+    low_memory: bool = True,
+    filter_proveedor: Optional[str] = None,
+    filter_fecha_desde: Optional[str] = None,
+    group_by: Optional[str] = None,
+):
+    from core.job_manager import safe_export_consolidated
+    fmts = [f.strip() for f in formats.split(",") if f.strip()]
+    res = safe_export_consolidated(
+        job_id,
+        formats=fmts,
+        low_memory=low_memory,
+        filter_proveedor=filter_proveedor,
+        filter_fecha_desde=filter_fecha_desde,
+        group_by=group_by,
+    )
+    return {"job_id": job_id, "export": res}
+
+
+@app.post("/api/v1/jobs/{job_id}/notify", tags=["jobs", "email"])
+async def trigger_notification(job_id: str):
+    from core.db import get_job
+    from core.email_sender import EmailSender
+    job = get_job(job_id)
+    if not job or not job.notify_email:
+        raise HTTPException(400, "Job has no notify_email configured")
+    try:
+        sender = EmailSender()
+        sender.send_job_summary(job)
+        return {"sent": True, "to": job.notify_email}
+    except Exception as e:
+        raise HTTPException(500, f"Send failed: {e}")
 
 
 @app.get("/health")

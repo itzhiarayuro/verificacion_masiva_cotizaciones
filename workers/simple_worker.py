@@ -17,8 +17,11 @@ from datetime import datetime
 # Make sure we can import from project root
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from core.db import init_db, get_job, update_job, finalize_job_if_complete, list_jobs
+from core.db import init_db, get_job, update_job, finalize_and_notify, list_jobs
 from core.job_manager import get_job_manager
+from core.observability import set_correlation_id, get_logger
+
+logger = get_logger(__name__)
 
 
 def process_pending_jobs(max_per_job: int = 50, max_jobs: int = 5):
@@ -31,20 +34,25 @@ def process_pending_jobs(max_per_job: int = 50, max_jobs: int = 5):
         if job.status not in ("pending", "processing", "partial"):
             continue
 
-        print(f"[worker] Advancing job {job.id} ({job.source_type}) status={job.status} progress={job.progress_pct}%")
+        set_correlation_id(job.id)
+        logger.info("Advancing job", extra={"source_type": job.source_type, "status": job.status, "progress": job.progress_pct})
 
         try:
             # Mark as processing
             update_job(job.id, status="processing")
 
             summary = mgr.process_job_small_batch(job.id, max_files=max_per_job)
-            print(f"[worker]   batch: +{summary.get('processed_in_batch', 0)} files, +{summary.get('new_rows', 0)} rows -> job {summary.get('job_status')}")
+            logger.info("Batch completed", extra={
+                "processed": summary.get('processed_in_batch', 0),
+                "new_rows": summary.get('new_rows', 0),
+                "job_status": summary.get('job_status')
+            })
 
-            finalize_job_if_complete(job.id)
+            finalize_and_notify(job.id, also_export=True)
             j2 = get_job(job.id)
             if j2 and j2.status in ("completed", "partial"):
                 print(f"[worker]   JOB FINISHED: {job.id} status={j2.status} total_rows={j2.total_rows}")
-                # TODO: send notification email / webhook here (see email_sender + job_manager)
+                print(f"[worker]   (Email sent if notify_email was set, consolidated export attempted)")
             worked += 1
         except Exception as e:
             print(f"[worker] ERROR on job {job.id}: {e}")
@@ -68,7 +76,7 @@ def main_loop(poll_interval: float = 5.0, max_per_job: int = 50):
             if n == 0:
                 # Also try to finalize any stuck jobs
                 for j in list_jobs(limit=20):
-                    finalize_job_if_complete(j.id)
+                    finalize_and_notify(j.id)
             time.sleep(poll_interval)
     except KeyboardInterrupt:
         print("\n[worker] Shutting down gracefully.")

@@ -1,0 +1,19 @@
+{
+  "job_id": "dcfdb4e2-7e3f-4734-9c99-61cfca8ede73",
+  "generated_at": "2026-06-10T23:06:12.292415Z",
+  "shards_total": 3,
+  "shards_ok": 3,
+  "shards_failed": 0,
+  "errors": [
+    {
+      "format": "parquet",
+      "error": "(\"Could not convert '1' with type str: tried to convert to int64\", 'Conversion failed for column Cód. Cotización Archivo with type object')"
+    }
+  ],
+  "rows_written": 3,
+  "formats": [
+    "csv"
+  ],
+  "primary_result_key": "jobs/dc/dcfdb4e2-7e3f-4734-9c99-61cfca8ede73/results/job_dcfdb4e2_consolidated.csv",
+  "recommendation": "Use Parquet for large exports. Split very big jobs by date/provider if >5M rows."
+}

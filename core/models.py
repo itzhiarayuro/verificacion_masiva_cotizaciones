@@ -40,6 +40,12 @@ class Job(Base):
     # Convenience for UI
     agent_logs: Mapped[Optional[list]] = mapped_column(JSON, default=list)  # last N agent-style events
 
+    # Export tracking for massive consolidated results (Phase 2 error handling)
+    export_status: Mapped[str] = mapped_column(String(20), default="")  # success, partial, failed, ""
+    export_errors: Mapped[Optional[list]] = mapped_column(JSON, default=list)  # list of {"shard": , "error": }
+    export_row_count: Mapped[int] = mapped_column(Integer, default=0)
+    export_manifest_key: Mapped[Optional[str]] = mapped_column(String(300), default=None)  # points to detailed .json manifest
+
     documents: Mapped[list["Document"]] = relationship("Document", back_populates="job", cascade="all, delete-orphan")
 
     __table_args__ = (

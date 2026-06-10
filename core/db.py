@@ -8,6 +8,9 @@ from sqlalchemy import create_engine, select, update, func
 from sqlalchemy.orm import Session, sessionmaker
 
 from .models import Base, Job, Document, ExtractedItem
+from core.observability import get_correlation_id, get_logger
+
+logger = get_logger(__name__)
 
 
 # Default to local SQLite for zero-config. Override with DATABASE_URL=postgresql://...
@@ -22,9 +25,44 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 
 
 def init_db() -> None:
-    """Create tables if they don't exist. Call on startup."""
+    """Create tables if they don't exist. Call on startup.
+    Also tries to add new columns for export error tracking on existing SQLite DBs.
+    """
     os.makedirs(os.path.dirname(DEFAULT_DB_PATH) if "/" in DEFAULT_DB_PATH or "\\" in DEFAULT_DB_PATH else "outputs", exist_ok=True)
     Base.metadata.create_all(bind=engine)
+    _ensure_export_columns()
+
+
+def _ensure_export_columns():
+    """Best-effort ALTER TABLE for SQLite when new export_* columns were added to the model.
+    Safe to call repeatedly. Other DBs should use proper migrations.
+    """
+    if not DATABASE_URL.startswith("sqlite"):
+        return
+    try:
+        with engine.connect() as conn:
+            # Check existing columns
+            res = conn.exec_driver_sql("PRAGMA table_info(jobs)")
+            cols = {row[1] for row in res.fetchall()}
+
+            new_cols = {
+                "export_status": "TEXT DEFAULT ''",
+                "export_errors": "TEXT",          # we store JSON as text
+                "export_row_count": "INTEGER DEFAULT 0",
+                "export_manifest_key": "TEXT",
+            }
+            for col, ddl in new_cols.items():
+                if col not in cols:
+                    try:
+                        conn.exec_driver_sql(f"ALTER TABLE jobs ADD COLUMN {col} {ddl}")
+                        logger = logging.getLogger(__name__)
+                        logger.info(f"Added missing column to jobs table: {col}")
+                    except Exception as alter_err:
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Could not add column {col}: {alter_err}")
+    except Exception as e:
+        logger = logging.getLogger(__name__)
+        logger.warning(f"_ensure_export_columns check failed (non-fatal): {e}")
 
 
 def get_session() -> Session:
@@ -136,7 +174,8 @@ def update_document(doc_id: int, **fields: Any) -> Optional[Document]:
 
 
 def add_agent_log(job_id: str, agent_id: str, message: str, status: str = "active") -> None:
-    """Append a lightweight agent-style event (kept small, last ~50)."""
+    """Append a lightweight agent-style event (kept small, last ~80)."""
+    cid = get_correlation_id() or job_id
     with get_session() as s:
         job = s.get(Job, job_id)
         if not job:
@@ -147,6 +186,7 @@ def add_agent_log(job_id: str, agent_id: str, message: str, status: str = "activ
             "agent_id": agent_id,
             "message": message,
             "status": status,
+            "correlation_id": cid,
         })
         # keep bounded
         job.agent_logs = logs[-80:]
@@ -167,3 +207,38 @@ def finalize_job_if_complete(job_id: str) -> Optional[Job]:
             s.commit()
             s.refresh(job)
         return job
+
+
+def finalize_and_notify(job_id: str, also_export: bool = False) -> Optional[Job]:
+    """Finalize the job status. If notify_email is set, send summary via EmailSender.
+    Optionally trigger consolidated export.
+    This is the hook called by workers on completion.
+    """
+    job = finalize_job_if_complete(job_id)
+    if not job:
+        return None
+
+    if also_export and job.status in ("completed", "partial"):
+        try:
+            from .job_manager import safe_export_consolidated
+            res = safe_export_consolidated(job_id, formats=["parquet"], low_memory=True)
+            if not res.get("success", False):
+                logger = logging.getLogger(__name__)
+                logger.warning(f"Export for job {job_id} had issues (non-fatal): {res.get('shards_failed')} failed shards")
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Auto-export wrapper failed for job {job_id} (non-fatal, job not affected): {e}")
+
+    if getattr(job, "notify_email", None) and job.status in ("completed", "partial"):
+        try:
+            from .email_sender import EmailSender
+            sender = EmailSender()
+            extra = ""
+            if getattr(job, "result_manifest_key", None):
+                extra = f"\nConsolidated result available at: {job.result_manifest_key}"
+            sender.send_job_summary(job, extra_text=extra)
+        except Exception as e:
+            logger = logging.getLogger(__name__)
+            logger.error(f"Failed sending completion email for job {job_id} to {job.notify_email}: {e}")
+
+    return job

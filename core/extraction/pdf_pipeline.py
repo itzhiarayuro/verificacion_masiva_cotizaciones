@@ -165,6 +165,33 @@ Retorna UNICAMENTE JSON válido:
 
             log("data_validator", f"Validadas {len(rows)} filas")
             return rows
+
+        except Exception as exc:
+            # Corrupt / unreadable shard handling - never kill the whole job
+            log("security", f"SHARD CORRUPTO o falló extracción: {filename} - {str(exc)[:200]}")
+            # Return a single error row so the job can continue and we have traceability
+            return [{
+                "Cód. Item Archivo": item_code,
+                "Cód. Cotización Archivo": cot_code,
+                "Proveedor": "ERROR_LECTURA",
+                "Descripción del Producto": f"[SHARD CORRUPTO] {filename} - {str(exc)[:150]}",
+                "Cantidad": "0",
+                "Precio Unitario": "NO ESPECIFICADO",
+                "Precio Total": "NO ESPECIFICADO",
+                "NIT": "NO ESPECIFICADO",
+                "Moneda": "COP",
+                "Tiempo Entrega": "NO ESPECIFICADO",
+                "Forma Pago": "NO ESPECIFICADO",
+                "Vigencia": "NO ESPECIFICADO",
+                "Comercial": "NO ESPECIFICADO",
+                "Correo": "NO ESPECIFICADO",
+                "Teléfono": "NO ESPECIFICADO",
+                "Archivo": filename,
+                "Página": 0,
+                "Confianza": "FAILED",
+                "Estado": "❌ Corrupto / Error lectura",
+                "Fuente": "error_handler",
+            }]
         finally:
             try:
                 os.unlink(tmp_path)

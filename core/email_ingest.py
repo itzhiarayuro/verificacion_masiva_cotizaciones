@@ -23,6 +23,7 @@ def ingest_gmail_to_job(
     llm_mode: str = "fallback",
     notify_email: Optional[str] = None,
     mark_read_after: bool = True,
+    max_files_per_subjob: int = 2000,
 ) -> Job:
     """
     End-to-end: fetch PDFs from Gmail, write them to object storage,
@@ -48,7 +49,26 @@ def ingest_gmail_to_job(
         job_prefix=job.storage_prefix,
     )
 
-    # Register the documents we just wrote to storage
+    # Register the documents we just wrote to storage (with auto-split support for huge email pulls)
+    max_per = 2000
+    if len(prepared) > max_per:
+        # Create sub-jobs for chunks
+        sub_ids = []
+        for i in range(0, len(prepared), max_per):
+            chunk = prepared[i:i+max_per]
+            sub = mgr.create_upload_job(   # re-use the splitting logic
+                chunk,
+                llm_mode=job.llm_mode or "fallback",
+                notify_email=job.notify_email,
+                max_files_per_subjob=max_files_per_subjob,
+            )
+            sub_ids.append(sub.id)
+        from core.db import update_job
+        update_job(job.id, total_files=len(prepared), status="pending",
+                   source_meta={**(job.source_meta or {}), "sub_job_ids": sub_ids, "auto_split": True})
+        logger.info(f"Email ingest job {job.id} AUTO-SPLIT into {len(sub_ids)} sub-jobs ({len(prepared)} PDFs)")
+        return job
+
     for item in prepared:
         name = item.get("name")
         key = item.get("storage_key") or f"{job.storage_prefix}/originals/{name}"

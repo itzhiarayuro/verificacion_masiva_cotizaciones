@@ -8,17 +8,21 @@ import os
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from celery import shared_task
-from core.db import init_db, update_job
+from core.db import init_db, update_job, finalize_and_notify
 from core.job_manager import get_job_manager
 
 
 @shared_task(bind=True, max_retries=3, default_retry_delay=30)
 def process_job_batch(self, job_id: str, max_files: int = 50):
-    """Process a small batch for a job. Can be called repeatedly until the job is complete."""
+    """Process a small batch for a job. Can be called repeatedly until the job is complete.
+    On final batches, finalize_and_notify will send email + attempt export.
+    """
     init_db()
     mgr = get_job_manager()
     try:
         summary = mgr.process_job_small_batch(job_id, max_files=max_files)
+        # Always check if this batch finished the job
+        finalize_and_notify(job_id, also_export=True)
         return {"job_id": job_id, **summary}
     except Exception as exc:
         # Let Celery retry a few times
